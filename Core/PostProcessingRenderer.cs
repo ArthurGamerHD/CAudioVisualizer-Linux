@@ -180,9 +180,17 @@ public class PostProcessingRenderer : IConfigurable
                     color = texture(screenTexture, uv).rgb;
                 }
 
-                // Bloom
+                // Bloom (per-channel shifted to follow the chromatic aberration split)
                 if (enableBloom) {
-                    vec3 bloom = texture(bloomTexture, TexCoord).rgb;
+                    vec3 bloom;
+                    if (enableChromaticAberration) {
+                        float aberration = chromaticStrength;
+                        bloom.r = texture(bloomTexture, TexCoord + vec2(aberration, 0.0)).r;
+                        bloom.g = texture(bloomTexture, TexCoord).g;
+                        bloom.b = texture(bloomTexture, TexCoord - vec2(aberration, 0.0)).b;
+                    } else {
+                        bloom = texture(bloomTexture, TexCoord).rgb;
+                    }
                     color += bloom * bloomIntensity;
                 }
 
