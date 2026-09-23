@@ -35,7 +35,7 @@ Write-Host "Build completed!" -ForegroundColor Green
 Write-Host "Output directories:" -ForegroundColor Cyan
 Write-Host "  - $outputDir\win-x64 (self-contained Windows 64-bit file)" -ForegroundColor White
 Write-Host "  - $outputDir\win-x86 (self-contained Windows 32-bit file)" -ForegroundColor White
-Write-Host "  - $outputDir\win-framework-dependent (requires .NET 9)" -ForegroundColor White
+Write-Host "  - $outputDir\win-framework-dependent (requires .NET 10.0)" -ForegroundColor White
 Write-Host "  - $outputDir\win-installer-ready (installer-ready with DLLs)" -ForegroundColor White
 
 # Show file sizes
