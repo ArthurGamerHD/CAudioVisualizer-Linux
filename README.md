@@ -91,7 +91,7 @@ Feel free to explore the code, contribute, or request new features!
 
 ### Made With
 [![MadeWith-C#]](https://dotnet.microsoft.com/en-us/download)
-[![.Net-Version]](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
+[![.Net-Version]](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 
 **External Libraries:**
 - **[NAudio](https://github.com/naudio/NAudio)** - Audio capture & processing
@@ -125,8 +125,8 @@ Feel free to explore the code, contribute, or request new features!
 
 ### Framework-Dependent Version
 - **All above requirements PLUS:**
-- **.NET Runtime**: .NET 9.0 Desktop Runtime
-  - Download from: https://dotnet.microsoft.com/download/dotnet/9.0
+- **.NET Runtime**: .NET 10.0 Desktop Runtime
+  - Download from: https://dotnet.microsoft.com/download/dotnet/10.0
 
 <div id="installation"></div>
 
@@ -137,7 +137,7 @@ Feel free to explore the code, contribute, or request new features!
 you can choose between using the following installation methods:
 - download and use CAudioVisualizer.exe for win-x64
 - download and use CAudioVisualizer.exe for win-x86
-- download and use CAudioVisualizer.exe for win-framework-dependent (needs .Net 9.0 installed)
+- download and use CAudioVisualizer.exe for win-framework-dependent (needs .Net 10.0 installed)
 - download and install CAudioVisualizer using the CAudioVisualizer-Setup.exe as a true windows application.
 
 <div id="download"></div>
@@ -240,7 +240,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 [Github-Watchers]: https://img.shields.io/github/watchers/SilenZcience/CAudioVisualizer?style=flat&color=purple
 
 [MadeWith-C#]: https://img.shields.io/badge/Made%20with-C%23-brightgreen
-[.NET-Version]: https://img.shields.io/badge/.NET-9.0-blue
+[.NET-Version]: https://img.shields.io/badge/.NET-10.0-blue
 <!-- https://img.shields.io/badge/Python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%20pypy--3.7%20%7C%20pypy--3.8%20%7C%20pypy--3.9%20%7C%20pypy--3.10-blue -->
 
 [GitHub-SilenZcience]: https://img.shields.io/badge/GitHub-SilenZcience-orange
