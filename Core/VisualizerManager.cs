@@ -63,6 +63,7 @@ public class VisualizerManager : IDisposable
     public void UpdateVisualizers(float[] waveformData, float[] fftData, double deltaTime)
     {
         _backgroundRenderer?.Update(waveformData, fftData, deltaTime);
+        _postProcessingRenderer?.Update(waveformData, fftData, deltaTime);
 
         foreach (var instance in _instances.Values.OrderBy(i => i.CreatedAt))
         {

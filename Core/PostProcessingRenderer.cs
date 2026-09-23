@@ -13,8 +13,18 @@ public class PostProcessingConfig
     public float BloomIntensity { get; set; } = 1.0f;
     public float BloomRadius { get; set; } = 4.0f;
 
+    // Bloom audio reactivity
+    public bool BloomAudioReactive { get; set; } = false;
+    public float BloomAudioStrength { get; set; } = 0.02f;
+    public float BloomAudioDecay { get; set; } = 2.0f;
+
     public bool EnableChromaticAberration { get; set; } = false;
     public float ChromaticStrength { get; set; } = 0.005f;
+
+    // Chromatic aberration audio reactivity
+    public bool ChromaticAudioReactive { get; set; } = false;
+    public float ChromaticAudioStrength { get; set; } = 0.02f;
+    public float ChromaticAudioDecay { get; set; } = 2.0f;
 
     public bool EnableVignette { get; set; } = false;
     public float VignetteStrength { get; set; } = 0.8f;
@@ -49,6 +59,11 @@ public class PostProcessingRenderer : IConfigurable
     private int _gaussianBlurProgram;
 
     private int _quadVAO, _quadVBO;
+
+    // Audio-reactive beat state
+    private float _bloomAudioEnvelope = 0.0f;
+    private float _chromaticAudioEnvelope = 0.0f;
+    private float _maxBassLevel = 0.0f;
 
     private Vector2i CurrentWindowSize => _visualizerManager?.GetCurrentWindowSize() ?? new Vector2i(800, 600);
 
@@ -239,7 +254,9 @@ public class PostProcessingRenderer : IConfigurable
             void main()
             {
                 vec3 color = texture(screenTexture, TexCoord).rgb;
-                float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                // Use the brightest channel so pure red/blue elements bloom too,
+                // not just green (luminance weights green ~10x blue and would drop them)
+                float brightness = max(color.r, max(color.g, color.b));
 
                 if (brightness > threshold) {
                     FragColor = vec4(color, 1.0);
@@ -353,6 +370,69 @@ public class PostProcessingRenderer : IConfigurable
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
+    public void Update(float[] waveformData, float[] fftData, double deltaTime)
+    {
+        bool bloomAudioActive = _config.EnableBloom && _config.BloomAudioReactive;
+        bool chromaticAudioActive = _config.EnableChromaticAberration && _config.ChromaticAudioReactive;
+        if (!bloomAudioActive && !chromaticAudioActive)
+        {
+            _bloomAudioEnvelope = 0.0f;
+            _chromaticAudioEnvelope = 0.0f;
+            _maxBassLevel = 0.0f;
+            return;
+        }
+
+        // Use low-frequency FFT bins to capture the beat (kick/bass drum)
+        int binCount = Math.Min(8, fftData.Length);
+        if (binCount <= 1)
+        {
+            _bloomAudioEnvelope = 0.0f;
+            _chromaticAudioEnvelope = 0.0f;
+            return;
+        }
+
+        float sum = 0.0f;
+        for (int i = 1; i < binCount; i++) // Skip DC bin
+        {
+            sum += fftData[i] * fftData[i];
+        }
+        float bassLevel = (float)Math.Sqrt(sum / (binCount - 1));
+
+        // Adaptive reference level so the pulse stays normalized to ~0-1
+        _maxBassLevel *= (float)Math.Pow(0.98, deltaTime);
+        _maxBassLevel = Math.Max(_maxBassLevel, 0.001f);
+        if (bassLevel > _maxBassLevel)
+        {
+            _maxBassLevel = bassLevel;
+        }
+
+        float normalizedLevel = Math.Min(1.0f, bassLevel / _maxBassLevel);
+
+        ApplyBeatEnvelope(ref _bloomAudioEnvelope, normalizedLevel, bloomAudioActive, _config.BloomAudioDecay, deltaTime);
+        ApplyBeatEnvelope(ref _chromaticAudioEnvelope, normalizedLevel, chromaticAudioActive, _config.ChromaticAudioDecay, deltaTime);
+    }
+
+    // Spike up instantly on the beat, then decay at the system's own rate when no beat comes
+    private static void ApplyBeatEnvelope(ref float envelope, float level, bool active, float decaySeconds, double deltaTime)
+    {
+        if (!active)
+        {
+            envelope = 0.0f;
+            return;
+        }
+
+        if (level > envelope)
+        {
+            envelope = level;
+        }
+        else
+        {
+            float releaseFactor = (float)Math.Pow(0.001, deltaTime / Math.Max(0.1, decaySeconds));
+            envelope *= releaseFactor;
+        }
+        envelope = Math.Max(0.0f, Math.Min(1.0f, envelope));
+    }
+
     public void BeginCapture()
     {
         var windowSize = CurrentWindowSize;
@@ -399,8 +479,24 @@ public class PostProcessingRenderer : IConfigurable
         GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "enableFilmGrain"), _config.EnableFilmGrain ? 1 : 0);
 
         // Effect parameters
-        GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "bloomIntensity"), _config.BloomIntensity);
-        GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "chromaticStrength"), _config.ChromaticStrength);
+
+        // Bloom intensity, boosted by the bloom's own audio-reactive beat pulse
+        float bloomIntensity = _config.BloomIntensity;
+        if (_config.BloomAudioReactive)
+        {
+            bloomIntensity += _bloomAudioEnvelope * _config.BloomAudioStrength;
+            bloomIntensity = Math.Max(0.0f, bloomIntensity);
+        }
+        GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "bloomIntensity"), bloomIntensity);
+
+        // Chromatic aberration strength, boosted by the CA's own audio-reactive beat pulse
+        float chromaticStrength = _config.ChromaticStrength;
+        if (_config.ChromaticAudioReactive)
+        {
+            chromaticStrength += _chromaticAudioEnvelope * _config.ChromaticAudioStrength;
+            chromaticStrength = Math.Max(0.0f, chromaticStrength);
+        }
+        GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "chromaticStrength"), chromaticStrength);
         GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "vignetteStrength"), _config.VignetteStrength);
         GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "vignetteSize"), _config.VignetteSize);
         GL.Uniform1(GL.GetUniformLocation(_postProcessShaderProgram, "contrast"), _config.Contrast);
@@ -532,6 +628,54 @@ public class PostProcessingRenderer : IConfigurable
                 {
                     _config.BloomRadius = radius;
                 }
+
+                ImGui.Spacing();
+                ImGui.TextColored(new System.Numerics.Vector4(0.5f, 0.8f, 1.0f, 1.0f), "Audio Reactive");
+                ImGui.Separator();
+
+                bool audioReactive = _config.BloomAudioReactive;
+                if (ImGui.Checkbox("Audio Reactive##Bloom", ref audioReactive))
+                {
+                    _config.BloomAudioReactive = audioReactive;
+                    if (!audioReactive)
+                    {
+                        _bloomAudioEnvelope = 0.0f;
+                        if (!(_config.EnableChromaticAberration && _config.ChromaticAudioReactive))
+                        {
+                            _maxBassLevel = 0.0f;
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Bloom spikes up on the beat of the audio");
+                }
+
+                if (_config.BloomAudioReactive)
+                {
+                    float audioStrength = _config.BloomAudioStrength;
+                    if (ImGui.SliderFloat("Audio Reaction Strength##Bloom", ref audioStrength, 0.0f, 3.0f, "%.4f"))
+                    {
+                        _config.BloomAudioStrength = audioStrength;
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("How strongly the bloom reacts to audio (max extra strength added on the beat)");
+                    }
+
+                    float decay = _config.BloomAudioDecay;
+                    if (ImGui.SliderFloat("Decay Time (s)##Bloom", ref decay, 0.01f, 10.0f))
+                    {
+                        _config.BloomAudioDecay = decay;
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("How long the spike lasts after the beat passes (higher = slower decrease)");
+                    }
+
+                    ImGui.Spacing();
+                    ImGui.Text($"Current Beat Pulse: {_bloomAudioEnvelope:F3}");
+                }
             }
 
             if (ImGui.Button("Reset Bloom"))
@@ -556,6 +700,54 @@ public class PostProcessingRenderer : IConfigurable
                 if (ImGui.SliderFloat("Strength", ref strength, 0.0f, 0.05f))
                 {
                     _config.ChromaticStrength = strength;
+                }
+
+                ImGui.Spacing();
+                ImGui.TextColored(new System.Numerics.Vector4(0.5f, 0.8f, 1.0f, 1.0f), "Audio Reactive");
+                ImGui.Separator();
+
+                bool audioReactive = _config.ChromaticAudioReactive;
+                if (ImGui.Checkbox("Audio Reactive##CA", ref audioReactive))
+                {
+                    _config.ChromaticAudioReactive = audioReactive;
+                    if (!audioReactive)
+                    {
+                        _chromaticAudioEnvelope = 0.0f;
+                        if (!(_config.EnableBloom && _config.BloomAudioReactive))
+                        {
+                            _maxBassLevel = 0.0f;
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Chromatic aberration spikes up on the beat of the audio");
+                }
+
+                if (_config.ChromaticAudioReactive)
+                {
+                    float audioStrength = _config.ChromaticAudioStrength;
+                    if (ImGui.SliderFloat("Audio Reaction Strength##CA", ref audioStrength, 0.0f, 0.05f, "%.4f"))
+                    {
+                        _config.ChromaticAudioStrength = audioStrength;
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("How strongly the aberration reacts to audio (max extra strength added on the beat)");
+                    }
+
+                    float decay = _config.ChromaticAudioDecay;
+                    if (ImGui.SliderFloat("Decay Time (s)##CA", ref decay, 0.01f, 10.0f))
+                    {
+                        _config.ChromaticAudioDecay = decay;
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("How long the spike lasts after the beat passes (higher = slower decrease)");
+                    }
+
+                    ImGui.Spacing();
+                    ImGui.Text($"Current Beat Pulse: {_chromaticAudioEnvelope:F3}");
                 }
             }
 
@@ -738,6 +930,9 @@ public class PostProcessingRenderer : IConfigurable
     public void ResetToDefaults()
     {
         _config = new PostProcessingConfig();
+        _bloomAudioEnvelope = 0.0f;
+        _chromaticAudioEnvelope = 0.0f;
+        _maxBassLevel = 0.0f;
     }
 
     public void ResetBloom()
@@ -747,6 +942,14 @@ public class PostProcessingRenderer : IConfigurable
         _config.BloomThreshold = defaultConfig.BloomThreshold;
         _config.BloomIntensity = defaultConfig.BloomIntensity;
         _config.BloomRadius = defaultConfig.BloomRadius;
+        _config.BloomAudioReactive = defaultConfig.BloomAudioReactive;
+        _config.BloomAudioStrength = defaultConfig.BloomAudioStrength;
+        _config.BloomAudioDecay = defaultConfig.BloomAudioDecay;
+        _bloomAudioEnvelope = 0.0f;
+        if (!(_config.EnableChromaticAberration && _config.ChromaticAudioReactive))
+        {
+            _maxBassLevel = 0.0f;
+        }
     }
 
     public void ResetChromaticAberration()
@@ -754,6 +957,14 @@ public class PostProcessingRenderer : IConfigurable
         var defaultConfig = new PostProcessingConfig();
         _config.EnableChromaticAberration = defaultConfig.EnableChromaticAberration;
         _config.ChromaticStrength = defaultConfig.ChromaticStrength;
+        _config.ChromaticAudioReactive = defaultConfig.ChromaticAudioReactive;
+        _config.ChromaticAudioStrength = defaultConfig.ChromaticAudioStrength;
+        _config.ChromaticAudioDecay = defaultConfig.ChromaticAudioDecay;
+        _chromaticAudioEnvelope = 0.0f;
+        if (!(_config.EnableBloom && _config.BloomAudioReactive))
+        {
+            _maxBassLevel = 0.0f;
+        }
     }
 
     public void ResetVignette()
