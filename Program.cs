@@ -6,7 +6,6 @@ using OpenTK.Windowing.GraphicsLibraryFramework;
 using NAudio.Wave;
 using MathNet.Numerics;
 using MathNet.Numerics.IntegralTransforms;
-using System.Runtime.InteropServices;
 
 using CAudioVisualizer.Core;
 using CAudioVisualizer.GUI;
@@ -14,15 +13,6 @@ using CAudioVisualizer.Configuration;
 using CAudioVisualizer.Visualizers;
 
 namespace CAudioVisualizer;
-
-internal static class NativeMethods
-{
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern uint SetThreadExecutionState(uint esFlags);
-
-    public const uint ES_CONTINUOUS = 0x80000000;
-    public const uint ES_DISPLAY_REQUIRED = 0x00000002;
-}
 
 public class AudioVisualizerWindow : GameWindow
 {
@@ -81,8 +71,6 @@ public class AudioVisualizerWindow : GameWindow
     protected override void OnLoad()
     {
         base.OnLoad();
-        NativeMethods.SetThreadExecutionState(
-            NativeMethods.ES_CONTINUOUS | NativeMethods.ES_DISPLAY_REQUIRED);
 
         GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         GL.Enable(EnableCap.Blend);
@@ -356,7 +344,6 @@ public class AudioVisualizerWindow : GameWindow
     protected override void OnUnload()
     {
         base.OnUnload();
-        NativeMethods.SetThreadExecutionState(NativeMethods.ES_CONTINUOUS);
 
         _capture?.StopRecording();
         _capture?.Dispose();
@@ -368,8 +355,13 @@ public class AudioVisualizerWindow : GameWindow
 
 static class Program
 {
+    private static readonly GLFWCallbacks.ErrorCallback GlfwErrorCallback =
+        (error, description) => Console.WriteLine($"GLFW error {error}: {description}");
+
     static void Main()
     {
+        GLFWProvider.SetErrorCallback(GlfwErrorCallback);
+
         var tempConfig = new CAudioVisualizer.Configuration.AppConfig();
         tempConfig.LoadConfiguration(CAudioVisualizer.Configuration.AppConfig.GetConfigFilePath());
 
@@ -389,7 +381,7 @@ static class Program
             nativeWindowSettings = new NativeWindowSettings()
             {
                 Title = "Audio Visualizer - Made by Silas Kraume (Multi-Monitor)",
-                Flags = ContextFlags.ForwardCompatible,
+                Flags = ContextFlags.Default,
                 Profile = ContextProfile.Core,
                 APIVersion = new Version(4, 6),
                 WindowBorder = WindowBorder.Hidden,
@@ -407,7 +399,7 @@ static class Program
             nativeWindowSettings = new NativeWindowSettings()
             {
                 Title = "Audio Visualizer - Made by Silas Kraume",
-                Flags = ContextFlags.ForwardCompatible,
+                Flags = ContextFlags.Default,
                 Profile = ContextProfile.Core,
                 APIVersion = new Version(4, 6),
                 WindowBorder = WindowBorder.Hidden,

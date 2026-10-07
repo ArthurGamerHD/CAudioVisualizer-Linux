@@ -16,6 +16,9 @@ public static class AudioDeviceManager
 {
     public static List<AudioDeviceInfo> GetAvailableAudioDevices()
     {
+        if (!OperatingSystem.IsWindows())
+            return GetPipeWireDevices();
+
         var devices = new List<AudioDeviceInfo>();
 
         try
@@ -97,6 +100,9 @@ public static class AudioDeviceManager
 
     public static IWaveIn CreateAudioCapture(string deviceId)
     {
+        if (!OperatingSystem.IsWindows())
+            return new PipeWireCapture(deviceId);
+
         try
         {
             if (string.IsNullOrEmpty(deviceId))
@@ -138,6 +144,12 @@ public static class AudioDeviceManager
         if (string.IsNullOrEmpty(deviceId))
             return "Default Device";
 
+        if (!OperatingSystem.IsWindows())
+        {
+            var source = GetPipeWireDevices().FirstOrDefault(d => d.Id == deviceId);
+            return source?.Name ?? "Unknown Device";
+        }
+
         try
         {
             var enumerator = new MMDeviceEnumerator();
@@ -148,5 +160,40 @@ public static class AudioDeviceManager
         {
             return "Unknown Device";
         }
+    }
+
+    private static List<AudioDeviceInfo> GetPipeWireDevices()
+    {
+        var devices = new List<AudioDeviceInfo>
+        {
+            new AudioDeviceInfo
+            {
+                Id = "",
+                Name = "Default - System Audio",
+                IsDefault = true,
+                DataFlow = "Playback "
+            }
+        };
+
+        try
+        {
+            foreach (var (name, description) in PipeWireCapture.ListSources().OrderBy(s => !s.Name.EndsWith(".monitor")))
+            {
+                bool isMonitor = name.EndsWith(".monitor");
+                devices.Add(new AudioDeviceInfo
+                {
+                    Id = name,
+                    Name = description,
+                    IsDefault = false,
+                    DataFlow = isMonitor ? "Playback " : "Recording"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to enumerate PipeWire sources: {ex.Message}");
+        }
+
+        return devices;
     }
 }
